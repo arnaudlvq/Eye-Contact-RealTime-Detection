@@ -31,8 +31,13 @@ def calculate_gaze_direction(iris_landmarks, eye_landmarks):
     return gaze_vector / np.linalg.norm(gaze_vector)
 
 def draw_info_box(frame, face_orientation, gaze_direction, global_gaze):
+    # Convert radians to degrees
+    face_orientation_deg = np.degrees(face_orientation)
+    gaze_direction_deg = np.degrees(gaze_direction)
+    global_gaze_deg = np.degrees(global_gaze)
+    
     # Box parameters
-    box_width = 350
+    box_width = 450
     box_height = 100
     box_color = (50, 50, 50)  # Dark gray
     text_color = (255, 255, 255)  # White
@@ -42,11 +47,10 @@ def draw_info_box(frame, face_orientation, gaze_direction, global_gaze):
     # Draw the box
     cv2.rectangle(frame, (padding, padding), (box_width + padding, box_height + padding), box_color, -1)
     
-    # Write the text inside the box
-    cv2.putText(frame, f"Face Orientation: {face_orientation}", (padding + 10, padding + text_y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1)
-    cv2.putText(frame, f"Gaze Direction: {gaze_direction}", (padding + 10, padding + text_y_offset + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1)
-    cv2.putText(frame, f"Global Gaze: {global_gaze}", (padding + 10, padding + text_y_offset + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1)
-
+    # Write the text inside the box with the orientation values in degrees
+    cv2.putText(frame, f"Face Orientation: {face_orientation_deg}", (padding + 10, padding + text_y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1)
+    cv2.putText(frame, f"Gaze Direction: {gaze_direction_deg}", (padding + 10, padding + text_y_offset + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1)
+    cv2.putText(frame, f"Global Gaze: {global_gaze_deg}", (padding + 10, padding + text_y_offset + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1)
 
 cap = cv2.VideoCapture(0)
 
@@ -114,9 +118,8 @@ while cap.isOpened():
         start_point = np.array([nose_tip.x * overlay.shape[1], nose_tip.y * overlay.shape[0]])
         draw_gaze_arrow(overlay, start_point, gaze_direction)
 
-        blended_frame = cv2.addWeighted(frame, 1.0, overlay, 0.5, 0)
+        blended_frame = cv2.addWeighted(frame, 1.0, overlay, 0.1, 0)
         
-        # Draw the info box with text
         draw_info_box(blended_frame, face_orientation, gaze_direction, global_gaze)
         
         cv2.imshow('Global Gaze Direction', blended_frame)
