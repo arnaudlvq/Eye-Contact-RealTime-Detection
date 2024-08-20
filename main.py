@@ -21,7 +21,6 @@ def draw_gaze_arrow(frame, start_point, gaze_direction, length=100, color=(0, 0,
     start_point = tuple(map(int, start_point))
     cv2.arrowedLine(frame, start_point, end_point, color, thickness)
 
-
 def calculate_gaze_direction(iris_landmarks, eye_landmarks):
     # Extract the coordinates for iris and eye landmarks
     iris_coords = np.array([(lm.x, lm.y, lm.z) for lm in iris_landmarks])
@@ -35,7 +34,6 @@ def calculate_gaze_direction(iris_landmarks, eye_landmarks):
     gaze_vector = iris_center - eye_center
     return gaze_vector / np.linalg.norm(gaze_vector)
 
-
 cap = cv2.VideoCapture(0)
 
 while cap.isOpened():
@@ -48,6 +46,9 @@ while cap.isOpened():
 
     if results.multi_face_landmarks:
         face_landmarks = results.multi_face_landmarks[0]
+
+        # Create an overlay for transparent drawing
+        overlay = np.zeros_like(frame, dtype=np.uint8)
         
         # Extract face orientation
         face_3d = []
@@ -91,50 +92,29 @@ while cap.isOpened():
         gaze_direction = (left_gaze + right_gaze) / 2
         global_gaze = face_orientation + gaze_direction
 
-        
-        # Display results
-        cv2.putText(frame, f"Face Orientation: {face_orientation}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-        cv2.putText(frame, f"Gaze Direction: {gaze_direction}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-        cv2.putText(frame, f"Global Gaze: {global_gaze}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-        
-        # Draw face mesh landmarks
+        # Draw face mesh landmarks on the overlay
         mp_drawing.draw_landmarks(
-            frame,
+            overlay,
             face_landmarks,
             mp_face_mesh.FACEMESH_CONTOURS,
             landmark_drawing_spec=drawing_spec,
             connection_drawing_spec=drawing_spec
         )
 
-        # Calculate gaze direction
-        left_gaze = calculate_gaze_direction(left_iris, left_eye)
-        right_gaze = calculate_gaze_direction(right_iris, right_eye)
-        
-        # Combine face orientation and gaze direction
-        face_orientation = np.array([angles[0], angles[1], angles[2]])
-        gaze_direction = (left_gaze + right_gaze) / 2
-        global_gaze = face_orientation + gaze_direction
-        
-        # Display results
-        cv2.putText(frame, f"Face Orientation: {face_orientation}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-        cv2.putText(frame, f"Gaze Direction: {gaze_direction}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-        cv2.putText(frame, f"Global Gaze: {global_gaze}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-        
-        # Draw gaze direction arrow
+        # Draw gaze direction arrow on the overlay
         nose_tip = face_landmarks.landmark[4]
-        start_point = np.array([nose_tip.x * frame.shape[1], nose_tip.y * frame.shape[0]])
-        draw_gaze_arrow(frame, start_point, gaze_direction)
-        
-        # Draw face mesh landmarks
-        mp_drawing.draw_landmarks(
-            frame,
-            face_landmarks,
-            mp_face_mesh.FACEMESH_CONTOURS,
-            landmark_drawing_spec=drawing_spec,
-            connection_drawing_spec=drawing_spec
-        )
+        start_point = np.array([nose_tip.x * overlay.shape[1], nose_tip.y * overlay.shape[0]])
+        draw_gaze_arrow(overlay, start_point, gaze_direction)
 
-    cv2.imshow('Global Gaze Direction', frame)
+        # Blend the overlay with the frame (50% transparency)
+        blended_frame = cv2.addWeighted(frame, 1.0, overlay, 0.1, 0)
+        
+        # Display results
+        cv2.putText(blended_frame, f"Face Orientation: {face_orientation}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        cv2.putText(blended_frame, f"Gaze Direction: {gaze_direction}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        cv2.putText(blended_frame, f"Global Gaze: {global_gaze}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        
+        cv2.imshow('Global Gaze Direction', blended_frame)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
