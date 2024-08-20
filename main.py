@@ -32,7 +32,7 @@ def calculate_gaze_direction(iris_landmarks, eye_landmarks):
 
 def draw_info_box(frame, face_orientation, gaze_direction, global_gaze):
     # Box parameters
-    box_width = 250
+    box_width = 350
     box_height = 100
     box_color = (50, 50, 50)  # Dark gray
     text_color = (255, 255, 255)  # White
@@ -43,9 +43,10 @@ def draw_info_box(frame, face_orientation, gaze_direction, global_gaze):
     cv2.rectangle(frame, (padding, padding), (box_width + padding, box_height + padding), box_color, -1)
     
     # Write the text inside the box
-    cv2.putText(frame, f"Face Orientation: {face_orientation}", (padding + 10, padding + text_y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 1)
-    cv2.putText(frame, f"Gaze Direction: {gaze_direction}", (padding + 10, padding + text_y_offset + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 1)
-    cv2.putText(frame, f"Global Gaze: {global_gaze}", (padding + 10, padding + text_y_offset + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 1)
+    cv2.putText(frame, f"Face Orientation: {face_orientation}", (padding + 10, padding + text_y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1)
+    cv2.putText(frame, f"Gaze Direction: {gaze_direction}", (padding + 10, padding + text_y_offset + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1)
+    cv2.putText(frame, f"Global Gaze: {global_gaze}", (padding + 10, padding + text_y_offset + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1)
+
 
 cap = cv2.VideoCapture(0)
 
