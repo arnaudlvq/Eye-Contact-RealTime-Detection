@@ -2,7 +2,7 @@ import cv2
 import mediapipe as mp
 import numpy as np
 
-# Initialize MediaPipe Face Mesh and Iris
+# Initialize MediaPipe Face Mesh
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(
     max_num_faces=1,
@@ -52,6 +52,69 @@ def draw_info_box(frame, face_orientation, gaze_direction, global_gaze):
     cv2.putText(frame, f"Gaze Direction: {gaze_direction_deg}", (padding + 10, padding + text_y_offset + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1)
     cv2.putText(frame, f"Global Gaze: {global_gaze_deg}", (padding + 10, padding + text_y_offset + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1)
 
+def draw_orientation_marker(frame, rmat, marker_size=50):
+    origin = np.array([marker_size, frame.shape[0] - marker_size, 0], dtype=np.float64)
+
+    # Define the axes in 3D space
+    axis_x = np.array([marker_size, 0, 0], dtype=np.float64)
+    axis_y = np.array([0, -marker_size, 0], dtype=np.float64)
+    axis_z = np.array([0, 0, -marker_size], dtype=np.float64)
+
+    # Project 3D axes to 2D using the rotation matrix
+    x_end = origin + rmat.dot(axis_x)
+    y_end = origin + rmat.dot(axis_y)
+    z_end = origin + rmat.dot(axis_z)
+
+    # Convert coordinates to integers
+    origin = tuple(origin[:2].astype(int))
+    x_end = tuple(x_end[:2].astype(int))
+    y_end = tuple(y_end[:2].astype(int))
+    z_end = tuple(z_end[:2].astype(int))
+
+    # Draw the axes on the frame
+    cv2.line(frame, origin, x_end, (0, 0, 255), 2)  # X-axis in red
+    cv2.line(frame, origin, y_end, (0, 255, 0), 2)  # Y-axis in green
+    cv2.line(frame, origin, z_end, (255, 0, 0), 2)  # Z-axis in blue
+
+def calculate_face_orientation(face_landmarks, frame_shape):
+    image_points = np.array([
+        (face_landmarks.landmark[1].x * frame_shape[1], face_landmarks.landmark[1].y * frame_shape[0]),  # Nose tip
+        (face_landmarks.landmark[152].x * frame_shape[1], face_landmarks.landmark[152].y * frame_shape[0]),  # Chin
+        (face_landmarks.landmark[33].x * frame_shape[1], face_landmarks.landmark[33].y * frame_shape[0]),  # Left eye outer corner
+        (face_landmarks.landmark[263].x * frame_shape[1], face_landmarks.landmark[263].y * frame_shape[0]),  # Right eye outer corner
+        (face_landmarks.landmark[61].x * frame_shape[1], face_landmarks.landmark[61].y * frame_shape[0]),  # Left mouth corner
+        (face_landmarks.landmark[291].x * frame_shape[1], face_landmarks.landmark[291].y * frame_shape[0])  # Right mouth corner
+    ], dtype="double")
+
+    model_points = np.array([
+        (0.0, 0.0, 0.0),  # Nose tip
+        (0.0, -63.6, -12.0),  # Chin (scaled down)
+        (-43.3, 32.7, -26.0),  # Left eye outer corner
+        (43.3, 32.7, -26.0),  # Right eye outer corner
+        (-28.9, -28.9, -24.1),  # Left mouth corner
+        (28.9, -28.9, -24.1)  # Right mouth corner
+    ])
+
+    focal_length = frame_shape[1]
+    center = (frame_shape[1] // 2, frame_shape[0] // 2)
+    camera_matrix = np.array([
+        [focal_length, 0, center[0]],
+        [0, focal_length, center[1]],
+        [0, 0, 1]
+    ], dtype="double")
+
+    dist_coeffs = np.zeros((4, 1))  # Assuming no lens distortion
+
+    success, rotation_vector, translation_vector = cv2.solvePnP(
+        model_points, image_points, camera_matrix, dist_coeffs, flags=cv2.SOLVEPNP_ITERATIVE
+    )
+
+    if not success:
+        return None, None
+
+    rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
+    return rotation_matrix, translation_vector
+
 cap = cv2.VideoCapture(0)
 
 while cap.isOpened():
@@ -65,64 +128,47 @@ while cap.isOpened():
     if results.multi_face_landmarks:
         face_landmarks = results.multi_face_landmarks[0]
 
-        # Create an overlay for transparent drawing
-        overlay = np.zeros_like(frame, dtype=np.uint8)
-        
-        # Extract face orientation
-        face_3d = []
-        face_2d = []
-        for idx, lm in enumerate(face_landmarks.landmark):
-            if idx == 33 or idx == 263 or idx == 1 or idx == 61 or idx == 291 or idx == 199:
-                x, y = int(lm.x * frame.shape[1]), int(lm.y * frame.shape[0])
-                face_2d.append([x, y])
-                face_3d.append([x, y, lm.z])
-        
-        face_2d = np.array(face_2d, dtype=np.float64)
-        face_3d = np.array(face_3d, dtype=np.float64)
+        # Calculate face orientation
+        rotation_matrix, translation_vector = calculate_face_orientation(face_landmarks, frame.shape)
+        if rotation_matrix is not None:
+            # Create an overlay for transparent drawing
+            overlay = np.zeros_like(frame, dtype=np.uint8)
 
-        focal_length = frame.shape[1]
-        center = (frame.shape[1] // 2, frame.shape[0] // 2)
-        cam_matrix = np.array([
-            [focal_length, 0, center[0]],
-            [0, focal_length, center[1]],
-            [0, 0, 1]
-        ], dtype=np.float64)
+            # Draw landmarks
+            mp_drawing.draw_landmarks(
+                overlay,
+                face_landmarks,
+                mp_face_mesh.FACEMESH_CONTOURS,
+                landmark_drawing_spec=drawing_spec,
+                connection_drawing_spec=drawing_spec
+            )
 
-        dist_matrix = np.zeros((4, 1), dtype=np.float64)
-        success, rot_vec, trans_vec = cv2.solvePnP(face_3d, face_2d, cam_matrix, dist_matrix)
-        rmat, jac = cv2.Rodrigues(rot_vec)
-        angles, mtxR, mtxQ, Qx, Qy, Qz = cv2.RQDecomp3x3(rmat)
-        
-        left_iris = [results.multi_face_landmarks[0].landmark[i] for i in range(468, 472)]
-        right_iris = [results.multi_face_landmarks[0].landmark[i] for i in range(473, 477)]
-        
-        left_eye = [results.multi_face_landmarks[0].landmark[i] for i in [33, 160, 158, 133, 153, 144]]
-        right_eye = [results.multi_face_landmarks[0].landmark[i] for i in [362, 385, 387, 263, 373, 380]]
-        
-        left_gaze = calculate_gaze_direction(left_iris, left_eye)
-        right_gaze = calculate_gaze_direction(right_iris, right_eye)
-        
-        face_orientation = np.array([angles[0], angles[1], angles[2]])
-        gaze_direction = (left_gaze + right_gaze) / 2
-        global_gaze = face_orientation + gaze_direction
+            # Calculate gaze direction
+            left_iris = [face_landmarks.landmark[i] for i in range(468, 472)]
+            right_iris = [face_landmarks.landmark[i] for i in range(473, 477)]
+            
+            left_eye = [face_landmarks.landmark[i] for i in [33, 160, 158, 133, 153, 144]]
+            right_eye = [face_landmarks.landmark[i] for i in [362, 385, 387, 263, 373, 380]]
+            
+            left_gaze = calculate_gaze_direction(left_iris, left_eye)
+            right_gaze = calculate_gaze_direction(right_iris, right_eye)
+            
+            face_orientation = np.array([rotation_matrix[0, 0], rotation_matrix[1, 1], rotation_matrix[2, 2]])
+            gaze_direction = (left_gaze + right_gaze) / 2
+            global_gaze = face_orientation + gaze_direction
 
-        mp_drawing.draw_landmarks(
-            overlay,
-            face_landmarks,
-            mp_face_mesh.FACEMESH_CONTOURS,
-            landmark_drawing_spec=drawing_spec,
-            connection_drawing_spec=drawing_spec
-        )
+            nose_tip = face_landmarks.landmark[4]
+            start_point = np.array([nose_tip.x * overlay.shape[1], nose_tip.y * overlay.shape[0]])
+            draw_gaze_arrow(overlay, start_point, gaze_direction)
 
-        nose_tip = face_landmarks.landmark[4]
-        start_point = np.array([nose_tip.x * overlay.shape[1], nose_tip.y * overlay.shape[0]])
-        draw_gaze_arrow(overlay, start_point, gaze_direction)
+            blended_frame = cv2.addWeighted(frame, 1.0, overlay, 0.1, 0)
+            
+            draw_info_box(blended_frame, face_orientation, gaze_direction, global_gaze)
 
-        blended_frame = cv2.addWeighted(frame, 1.0, overlay, 0.1, 0)
-        
-        draw_info_box(blended_frame, face_orientation, gaze_direction, global_gaze)
-        
-        cv2.imshow('Global Gaze Direction', blended_frame)
+            # Draw the 3D orientation marker
+            draw_orientation_marker(blended_frame, rotation_matrix)
+            
+            cv2.imshow('Global Gaze Direction', blended_frame)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
