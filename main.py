@@ -30,15 +30,14 @@ def calculate_gaze_direction(iris_landmarks, eye_landmarks):
     gaze_vector = iris_center - eye_center
     return gaze_vector / np.linalg.norm(gaze_vector)
 
-def draw_info_box(frame, face_orientation, gaze_direction, global_gaze):
+def draw_info_box(frame, pitch, yaw, roll, gaze_direction, global_gaze):
     # Convert radians to degrees
-    face_orientation_deg = np.degrees(face_orientation)
     gaze_direction_deg = np.degrees(gaze_direction)
     global_gaze_deg = np.degrees(global_gaze)
     
     # Box parameters
     box_width = 450
-    box_height = 100
+    box_height = 110
     box_color = (50, 50, 50)  # Dark gray
     text_color = (255, 255, 255)  # White
     padding = 10
@@ -48,9 +47,11 @@ def draw_info_box(frame, face_orientation, gaze_direction, global_gaze):
     cv2.rectangle(frame, (padding, padding), (box_width + padding, box_height + padding), box_color, -1)
     
     # Write the text inside the box with the orientation values in degrees
-    cv2.putText(frame, f"Face Orientation: {face_orientation_deg}", (padding + 10, padding + text_y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1)
-    cv2.putText(frame, f"Gaze Direction: {gaze_direction_deg}", (padding + 10, padding + text_y_offset + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1)
-    cv2.putText(frame, f"Global Gaze: {global_gaze_deg}", (padding + 10, padding + text_y_offset + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1)
+    cv2.putText(frame, f"Pitch: {pitch:.2f}", (padding + 10, padding + text_y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1)
+    cv2.putText(frame, f"Yaw: {yaw:.2f}", (padding + 10, padding + text_y_offset + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1)
+    cv2.putText(frame, f"Roll: {roll:.2f}", (padding + 10, padding + text_y_offset + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1)
+    cv2.putText(frame, f"Gaze Direction: {gaze_direction_deg}", (padding + 10, padding + text_y_offset + 60), cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1)
+    cv2.putText(frame, f"Global Gaze: {global_gaze_deg}", (padding + 10, padding + text_y_offset + 80), cv2.FONT_HERSHEY_SIMPLEX, 0.4, text_color, 1)
 
 def draw_orientation_marker(frame, rmat, marker_size=50):
     origin = np.array([marker_size, frame.shape[0] - marker_size, 0], dtype=np.float64)
@@ -77,43 +78,64 @@ def draw_orientation_marker(frame, rmat, marker_size=50):
     cv2.line(frame, origin, z_end, (255, 0, 0), 2)  # Z-axis in blue
 
 def calculate_face_orientation(face_landmarks, frame_shape):
-    image_points = np.array([
-        (face_landmarks.landmark[1].x * frame_shape[1], face_landmarks.landmark[1].y * frame_shape[0]),  # Nose tip
-        (face_landmarks.landmark[152].x * frame_shape[1], face_landmarks.landmark[152].y * frame_shape[0]),  # Chin
-        (face_landmarks.landmark[33].x * frame_shape[1], face_landmarks.landmark[33].y * frame_shape[0]),  # Left eye outer corner
-        (face_landmarks.landmark[263].x * frame_shape[1], face_landmarks.landmark[263].y * frame_shape[0]),  # Right eye outer corner
-        (face_landmarks.landmark[61].x * frame_shape[1], face_landmarks.landmark[61].y * frame_shape[0]),  # Left mouth corner
-        (face_landmarks.landmark[291].x * frame_shape[1], face_landmarks.landmark[291].y * frame_shape[0])  # Right mouth corner
-    ], dtype="double")
+
+    image_points = []
+    for idx, lm in enumerate(face_landmarks.landmark):
+        # Convert landmark x and y to pixel coordinates
+        x, y = int(lm.x * frame_shape[1]), int(lm.y * frame_shape[0])
+
+        # Add the 2D coordinates to an array
+        image_points.append((x, y))
+
+    # Get relevant landmarks for headpose estimation
+    face_2d_head = np.array([
+        image_points[1],      # Nose
+        image_points[199],    # Chin
+        image_points[33],     # Left eye left corner
+        image_points[263],    # Right eye right corner
+        image_points[61],     # Left mouth corner
+        image_points[291]     # Right mouth corner
+    ], dtype=np.float64)
 
     model_points = np.array([
-        (0.0, 0.0, 0.0),  # Nose tip
-        (0.0, -63.6, -12.0),  # Chin (scaled down)
-        (-43.3, 32.7, -26.0),  # Left eye outer corner
-        (43.3, 32.7, -26.0),  # Right eye outer corner
-        (-28.9, -28.9, -24.1),  # Left mouth corner
-        (28.9, -28.9, -24.1)  # Right mouth corner
+        (0.0, 0.0, 0.0),            # Nose tip
+        (0.0, -330.0, -65.0),       # Chin
+        (-225.0, 170.0, -135.0),    # Left eye left corner
+        (225.0, 170.0, -135.0),     # Right eye right corner
+        (-150.0, -150.0, -125.0),   # Left Mouth corner
+        (150.0, -150.0, -125.0)     # Right mouth corner
     ])
 
     focal_length = frame_shape[1]
-    center = (frame_shape[1] // 2, frame_shape[0] // 2)
+    center = (frame_shape[1] / 2, frame_shape[0] / 2)
     camera_matrix = np.array([
         [focal_length, 0, center[0]],
         [0, focal_length, center[1]],
         [0, 0, 1]
-    ], dtype="double")
+    ])
 
-    dist_coeffs = np.zeros((4, 1))  # Assuming no lens distortion
+    dist_coeffs = np.zeros((4, 1), dtype=np.float64)  # Assuming no lens distortion
 
     success, rotation_vector, translation_vector = cv2.solvePnP(
-        model_points, image_points, camera_matrix, dist_coeffs, flags=cv2.SOLVEPNP_ITERATIVE
+        model_points, face_2d_head, camera_matrix, dist_coeffs, flags=cv2.SOLVEPNP_ITERATIVE
     )
 
     if not success:
-        return None, None
+        return None, None, None, None, None
 
+    # Convert rotation vector to rotation matrix
     rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
-    return rotation_matrix, translation_vector
+
+    # Convert rotation matrix to quaternion
+    quaternion = cv2.RQDecomp3x3(rotation_matrix)[1]
+
+    # Compute Euler angles (yaw, pitch, and roll)
+    yaw = np.arctan2(rotation_matrix[1][0], rotation_matrix[0][0])
+    pitch = np.arcsin(-rotation_matrix[2][0])
+    roll = np.arctan2(rotation_matrix[2][1], rotation_matrix[2][2])
+
+    return pitch, yaw, roll, rotation_matrix, translation_vector
+
 
 cap = cv2.VideoCapture(0)
 
@@ -129,7 +151,7 @@ while cap.isOpened():
         face_landmarks = results.multi_face_landmarks[0]
 
         # Calculate face orientation
-        rotation_matrix, translation_vector = calculate_face_orientation(face_landmarks, frame.shape)
+        pitch, yaw, roll, rotation_matrix, translation_vector = calculate_face_orientation(face_landmarks, frame.shape)
         if rotation_matrix is not None:
             # Create an overlay for transparent drawing
             overlay = np.zeros_like(frame, dtype=np.uint8)
@@ -147,15 +169,14 @@ while cap.isOpened():
             left_iris = [face_landmarks.landmark[i] for i in range(468, 472)]
             right_iris = [face_landmarks.landmark[i] for i in range(473, 477)]
             
-            left_eye = [face_landmarks.landmark[i] for i in [33, 160, 158, 133, 153, 144]]
-            right_eye = [face_landmarks.landmark[i] for i in [362, 385, 387, 263, 373, 380]]
+            left_eye = [face_landmarks.landmark[i] for i in [ 33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161 , 246 ]]
+            right_eye = [face_landmarks.landmark[i] for i in [ 362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385,384, 398 ]]
             
             left_gaze = calculate_gaze_direction(left_iris, left_eye)
             right_gaze = calculate_gaze_direction(right_iris, right_eye)
             
-            face_orientation = np.array([rotation_matrix[0, 0], rotation_matrix[1, 1], rotation_matrix[2, 2]])
             gaze_direction = (left_gaze + right_gaze) / 2
-            global_gaze = face_orientation + gaze_direction
+            global_gaze = np.array([pitch, yaw, roll]) + gaze_direction
 
             nose_tip = face_landmarks.landmark[4]
             start_point = np.array([nose_tip.x * overlay.shape[1], nose_tip.y * overlay.shape[0]])
@@ -163,7 +184,7 @@ while cap.isOpened():
 
             blended_frame = cv2.addWeighted(frame, 1.0, overlay, 0.1, 0)
             
-            draw_info_box(blended_frame, face_orientation, gaze_direction, global_gaze)
+            draw_info_box(blended_frame, pitch, yaw, roll, gaze_direction, global_gaze)
 
             # Draw the 3D orientation marker
             draw_orientation_marker(blended_frame, rotation_matrix)
