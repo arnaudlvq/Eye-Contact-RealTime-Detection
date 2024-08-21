@@ -34,8 +34,8 @@ drawing_spec = mp_drawing.DrawingSpec(thickness=1, circle_radius=1)
 cap = cv2.VideoCapture(0)
 
 # Variables to store the calibration angles, depending on your face geometry might need calibration
-calibrated_x = 4
-calibrated_y = 2
+calibrated_x = 6
+calibrated_y = 4
 calibrated_z = 0
 calibrated = False
 
@@ -114,28 +114,54 @@ while cap.isOpened():
             else:
                 text = "Forward"
 
-            # Create an overlay for transparent drawing
-            overlay = np.zeros_like(image, dtype=np.uint8)
+            # Create an overlay for the mesh with transparent drawing
+            mesh_overlay = np.zeros_like(image, dtype=np.uint8)
 
-            # Calculate gaze direction
-            left_iris = [face_landmarks.landmark[i] for i in range(468, 472)]
-            right_iris = [face_landmarks.landmark[i] for i in range(473, 477)]
+            # Draw face mesh on the overlay
+            mp_drawing.draw_landmarks(image=mesh_overlay,
+                                      landmark_list=face_landmarks,
+                                      connections=mp_face_mesh.FACEMESH_CONTOURS,
+                                      landmark_drawing_spec=drawing_spec,
+                                      connection_drawing_spec=drawing_spec)
+
+            # Blend the mesh overlay with the original image
+            mesh_alpha = 0.4  # Mesh transparency factor
+            image = cv2.addWeighted(mesh_overlay, mesh_alpha, image, 1 - mesh_alpha, 0)
+
+
+
+            ########## Calculate gaze direction
+
+
+            left_iris = [face_landmarks.landmark[468]]
+            right_iris = [face_landmarks.landmark[473]]
             
-            left_eye = [face_landmarks.landmark[i] for i in [ 33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161 , 246 ]]
-            right_eye = [face_landmarks.landmark[i] for i in [ 362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385,384, 398 ]]
+            left_eye = [face_landmarks.landmark[i] for i in [ 33, 173]]
+            right_eye = [face_landmarks.landmark[i] for i in [ 398, 263]]
             
+            # In the while loop after gaze detection
             left_gaze = calculate_gaze_direction(left_iris, left_eye)
             right_gaze = calculate_gaze_direction(right_iris, right_eye)
+            gaze_offset = [0, 0.2, 0]
+            gaze_direction = (left_gaze + right_gaze) / 2 + gaze_offset
             
-            gaze_direction = (left_gaze + right_gaze) / 2
+            if gaze_direction[0] < -0.2:
+                gaze_text = "Looking Left"
+            elif gaze_direction[0] > 0.2:
+                gaze_text = "Looking Right"
+            elif gaze_direction[1] < -0.3:
+                gaze_text = "Looking Up"
+            elif gaze_direction[1] > 0.2:
+                gaze_text = "Looking Down"
+            else:
+                gaze_text = "Looking Forward"
+            
+            cv2.putText(image, gaze_text, (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 2)
+
 
             nose_tip = face_landmarks.landmark[4]
-            start_point = np.array([nose_tip.x * overlay.shape[1], nose_tip.y * overlay.shape[0]])
-            draw_gaze_arrow(overlay, start_point, gaze_direction)
-
-            # Blend the overlay with the original image
-            alpha = 0.6  # Transparency factor
-            image = cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0)
+            start_point = np.array([nose_tip.x * image.shape[1], nose_tip.y * image.shape[0]])
+            draw_gaze_arrow(image, start_point, gaze_direction)
 
             nose_3d_projection, jacobian = cv2.projectPoints(nose_3d, rotation_vec, translation_vec, cam_matrix, distortion_matrix)
 
@@ -152,16 +178,10 @@ while cap.isOpened():
         end = time.time()
         totalTime = end - start
 
-        fps = 1 / totalTime
-        print("FPS: ", fps)
+        fps = 1 / (totalTime + 0.00001)
 
         cv2.putText(image, f'FPS: {int(fps)}', (20, 450), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 2)
 
-        mp_drawing.draw_landmarks(image=image,
-                                  landmark_list=face_landmarks,
-                                  connections=mp_face_mesh.FACEMESH_CONTOURS,
-                                  landmark_drawing_spec=drawing_spec,
-                                  connection_drawing_spec=drawing_spec)
     cv2.imshow('Head Pose Detection', image)
     if cv2.waitKey(5) & 0xFF == ord('q'):
         break
