@@ -34,8 +34,8 @@ drawing_spec = mp_drawing.DrawingSpec(thickness=1, circle_radius=1)
 cap = cv2.VideoCapture(0)
 
 # Variables to store the calibration angles, depending on your face geometry might need calibration
-calibrated_x = 6
-calibrated_y = 4
+calibrated_x = 0
+calibrated_y = 0
 calibrated_z = 0
 calibrated = False
 
@@ -103,16 +103,16 @@ while cap.isOpened():
             z -= calibrated_z
 
             # Determine head pose direction
-            if y < -10:
-                text = "Looking Left"
-            elif y > 10:
-                text = "Looking Right"
+            if y < -6:
+                head_text = "Left"
+            elif y > 6:
+                head_text = "Right"
             elif x < -10:
-                text = "Looking Down"
+                head_text = "Down"
             elif x > 10:
-                text = "Looking Up"
+                head_text = "Up"
             else:
-                text = "Forward"
+                head_text = "Forward"
 
             # Create an overlay for the mesh with transparent drawing
             mesh_overlay = np.zeros_like(image, dtype=np.uint8)
@@ -145,18 +145,18 @@ while cap.isOpened():
             gaze_offset = [0, 0.2, 0]
             gaze_direction = (left_gaze + right_gaze) / 2 + gaze_offset
             
-            if gaze_direction[0] < -0.2:
-                gaze_text = "Looking Left"
-            elif gaze_direction[0] > 0.2:
-                gaze_text = "Looking Right"
-            elif gaze_direction[1] < -0.3:
-                gaze_text = "Looking Up"
-            elif gaze_direction[1] > 0.2:
-                gaze_text = "Looking Down"
+            if gaze_direction[0] < -0.4:
+                gaze_text = "Left"
+            elif gaze_direction[0] > 0.4:
+                gaze_text = "Right"
+            elif gaze_direction[1] < -0.5:
+                gaze_text = "Up"
+            elif gaze_direction[1] > 0.4:
+                gaze_text = "Down"
             else:
-                gaze_text = "Looking Forward"
+                gaze_text = "Forward"
             
-            cv2.putText(image, gaze_text, (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 2)
+            cv2.putText(image, f"Gaze: {gaze_text}", (20, 150), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 2)
 
 
             nose_tip = face_landmarks.landmark[4]
@@ -170,15 +170,28 @@ while cap.isOpened():
 
             cv2.line(image, p1, p2, (255, 0, 0), 3)
 
-            cv2.putText(image, text, (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 2)
+            cv2.putText(image, f"Head: {head_text}", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 2)
             cv2.putText(image, "x: " + str(np.round(x, 2)), (500, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
             cv2.putText(image, "y: " + str(np.round(y, 2)), (500, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
             cv2.putText(image, "z: " + str(np.round(z, 2)), (500, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
+            # Determine if eye contact is made
+            eye_contact = (
+                (head_text == "Forward" and gaze_text == "Forward") or
+                (head_text == "Up" and gaze_text == "Down") or
+                (head_text == "Down" and gaze_text == "Up") or
+                (head_text == "Left" and gaze_text == "Right") or
+                (head_text == "Right" and gaze_text == "Left")
+            )
+            
+            if eye_contact:
+                cv2.putText(image, "Eye Contact", (20, 250), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 2)
+
+
         end = time.time()
         totalTime = end - start
 
-        fps = 1 / (totalTime + 0.00001)
+        fps = 1 / (totalTime + 0.00001) ##Compute FPS with zero division sec
 
         cv2.putText(image, f'FPS: {int(fps)}', (20, 450), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 2)
 
