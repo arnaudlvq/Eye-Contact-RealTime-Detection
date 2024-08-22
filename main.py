@@ -3,6 +3,11 @@ import cv2
 import mediapipe as mp
 import time
 
+
+###################
+### DEFINITIONS ###
+###################
+
 def draw_gaze_arrow(frame, start_point, gaze_direction, length=100, color=(0, 0, 255), thickness=2):
     gaze_direction_2d = gaze_direction[:2]  # Extract the x, y components
     end_point = tuple(map(int, (start_point + gaze_direction_2d * length)))
@@ -29,43 +34,50 @@ def calculate_EAR(eye_landmarks):
     EAR = (A + B) / (2.0 * C)
     return EAR
 
-mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(
-    static_image_mode=False,
-    max_num_faces=1,
-    refine_landmarks=True,
-    min_detection_confidence=0.5
-)
+def define_mesh(mp_face_mesh):
+    return mp_face_mesh.FaceMesh(
+        static_image_mode=False,
+        max_num_faces=1,
+        refine_landmarks=True,
+        min_detection_confidence=0.5
+    )
 
-mp_drawing = mp.solutions.drawing_utils
 
-drawing_spec = mp_drawing.DrawingSpec(thickness=1, circle_radius=1)
-
-cap = cv2.VideoCapture(0)
+#################
+### VARIABLES ###
+#################
 
 # Variables to store the calibration angles, depending on your face geometry might need calibration
 calibrated_x = 6
 calibrated_y = 0
 calibrated_z = 0
 
-# EAR threshold for blink detection
-EAR_THRESHOLD = 0.25
-blink_counter = 0
+# EAR for blink detection
+EAR_THRESHOLD = 0.2
 blinking = False
+
+
+#################
+### BEGINNING ###
+#################
+
+mp_face_mesh = mp.solutions.face_mesh
+face_mesh = define_mesh(mp_face_mesh)
+
+mp_drawing = mp.solutions.drawing_utils
+drawing_spec = mp_drawing.DrawingSpec(thickness=1, circle_radius=1)
+cap = cv2.VideoCapture(0)
+
 
 while cap.isOpened():
     success, image = cap.read()
 
     start = time.time()
 
-    image = cv2.cvtColor(cv2.flip(image, 1), cv2.COLOR_BGR2RGB)  # flipped for selfie view
-
+    image = cv2.cvtColor(cv2.flip(image, 1), cv2.COLOR_BGR2RGB)
     image.flags.writeable = False
-
     results = face_mesh.process(image)
-
     image.flags.writeable = True
-
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
     img_h, img_w, img_c = image.shape
@@ -145,7 +157,6 @@ while cap.isOpened():
 
 
             ########## Calculate gaze direction
-
 
             left_iris = [face_landmarks.landmark[468]]
             right_iris = [face_landmarks.landmark[473]]
