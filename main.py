@@ -19,6 +19,16 @@ def calculate_gaze_direction(iris_landmarks, eye_landmarks):
     gaze_vector = iris_center - eye_center
     return gaze_vector / np.linalg.norm(gaze_vector)
 
+def calculate_EAR(eye_landmarks):
+    def landmark_to_point(landmark):
+        return np.array([landmark.x, landmark.y])
+
+    A = np.linalg.norm(landmark_to_point(eye_landmarks[1]) - landmark_to_point(eye_landmarks[5]))
+    B = np.linalg.norm(landmark_to_point(eye_landmarks[2]) - landmark_to_point(eye_landmarks[4]))
+    C = np.linalg.norm(landmark_to_point(eye_landmarks[0]) - landmark_to_point(eye_landmarks[3]))
+    EAR = (A + B) / (2.0 * C)
+    return EAR
+
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(
     static_image_mode=False,
@@ -38,6 +48,12 @@ calibrated_x = 0
 calibrated_y = 0
 calibrated_z = 0
 calibrated = False
+
+# EAR threshold for blink detection
+EAR_THRESHOLD = 0.2
+EAR_CONSEC_FRAMES = 3
+blink_counter = 0
+blinking = False
 
 while cap.isOpened():
     success, image = cap.read()
@@ -138,7 +154,22 @@ while cap.isOpened():
             
             left_eye = [face_landmarks.landmark[i] for i in [ 33, 173]]
             right_eye = [face_landmarks.landmark[i] for i in [ 398, 263]]
+
+
+            complete_left_eye = [face_landmarks.landmark[i] for i in [33, 160, 158, 133, 153, 144]]
+            complete_right_eye = [face_landmarks.landmark[i] for i in [362, 385, 387, 263, 373, 380]]
             
+            # Calculate EAR for blink detection
+            left_ear = calculate_EAR(complete_left_eye)
+            right_ear = calculate_EAR(complete_right_eye)
+            avg_ear = (left_ear + right_ear) / 2
+            
+            if (avg_ear < EAR_THRESHOLD) & (head_text != "Up"):
+                blinking = True
+                head_text = "blinking"
+            else:
+                blinking = False
+
             # In the while loop after gaze detection
             left_gaze = calculate_gaze_direction(left_iris, left_eye)
             right_gaze = calculate_gaze_direction(right_iris, right_eye)
@@ -149,9 +180,9 @@ while cap.isOpened():
                 gaze_text = "Left"
             elif gaze_direction[0] > 0.4:
                 gaze_text = "Right"
-            elif gaze_direction[1] < -0.5:
+            elif gaze_direction[1] < -0.3:
                 gaze_text = "Up"
-            elif gaze_direction[1] > 0.4:
+            elif gaze_direction[1] > 0.3:
                 gaze_text = "Down"
             else:
                 gaze_text = "Forward"
@@ -177,16 +208,17 @@ while cap.isOpened():
 
             # Determine if eye contact is made
             eye_contact = (
+                not blinking and (
                 (head_text == "Forward" and gaze_text == "Forward") or
                 (head_text == "Up" and gaze_text == "Down") or
+                (head_text == "Up" and gaze_text == "Forward") or
                 (head_text == "Down" and gaze_text == "Up") or
                 (head_text == "Left" and gaze_text == "Right") or
-                (head_text == "Right" and gaze_text == "Left")
+                (head_text == "Right" and gaze_text == "Left"))
             )
             
             if eye_contact:
                 cv2.putText(image, "Eye Contact", (20, 250), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 2)
-
 
         end = time.time()
         totalTime = end - start
