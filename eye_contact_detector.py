@@ -12,7 +12,7 @@ class EyeContactDetector:
         self.cap = cv2.VideoCapture(0)
         self.calibrated_x, self.calibrated_y, self.calibrated_z = 6, 0, 0
         self.blinking = False
-        self.EAR_THRESHOLD = 0.2
+        self.EAR_THRESHOLD = 0.18
         self.eye_contact = False
         self._needs_calibration = False  # Private variable to track calibration status
 
@@ -63,7 +63,7 @@ class EyeContactDetector:
         image.flags.writeable = True
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
-        img_h, img_w, img_c = image.shape
+        img_h, img_w, _ = image.shape
         face_2d = []
         face_3d = []
 
@@ -71,9 +71,6 @@ class EyeContactDetector:
             for face_landmarks in results.multi_face_landmarks:
                 for idx, lm in enumerate(face_landmarks.landmark):
                     if idx == 33 or idx == 263 or idx == 1 or idx == 61 or idx == 291 or idx == 199:
-                        if idx == 1:
-                            nose_2d = (lm.x * img_w, lm.y * img_h)
-                            nose_3d = (lm.x * img_w, lm.y * img_h, lm.z * 3000)
                         x, y = int(lm.x * img_w), int(lm.y * img_h)
 
                         face_2d.append([x, y])
@@ -90,11 +87,11 @@ class EyeContactDetector:
                                        [0, 0, 1]])
                 distortion_matrix = np.zeros((4, 1), dtype=np.float64)
 
-                success, rotation_vec, translation_vec = cv2.solvePnP(face_3d, face_2d, cam_matrix, distortion_matrix)
+                success, rotation_vec, _ = cv2.solvePnP(face_3d, face_2d, cam_matrix, distortion_matrix)
 
                 # Getting rotational angles of face
-                rmat, jac = cv2.Rodrigues(rotation_vec)
-                angles, mtxR, mtxQ, Qx, Qy, Qz = cv2.RQDecomp3x3(rmat)
+                rmat, _ = cv2.Rodrigues(rotation_vec)
+                angles, _, _, _, _, _ = cv2.RQDecomp3x3(rmat)
 
                 x = angles[0] * 360
                 y = angles[1] * 360
@@ -113,13 +110,13 @@ class EyeContactDetector:
                 z -= self.calibrated_z
 
                 # Determine head pose direction
-                if y < -6:
+                if y < -8:
                     head_text = "Left"
-                elif y > 6:
+                elif y > 8:
                     head_text = "Right"
-                elif x < -10:
+                elif x < -15:
                     head_text = "Down"
-                elif x > 10:
+                elif x > 8:
                     head_text = "Up"
                 else:
                     head_text = "Forward"
@@ -129,10 +126,10 @@ class EyeContactDetector:
 
                 # Draw face mesh on the overlay
                 self.mp_drawing.draw_landmarks(image=mesh_overlay,
-                                              landmark_list=face_landmarks,
-                                              connections=self.mp_face_mesh.FACEMESH_CONTOURS,
-                                              landmark_drawing_spec=self.drawing_spec,
-                                              connection_drawing_spec=self.drawing_spec)
+                                               landmark_list=face_landmarks,
+                                               connections=self.mp_face_mesh.FACEMESH_CONTOURS,
+                                               landmark_drawing_spec=self.drawing_spec,
+                                               connection_drawing_spec=self.drawing_spec)
 
                 # Blend the mesh overlay with the original image
                 mesh_alpha = 0.4  # Mesh transparency factor
@@ -163,34 +160,46 @@ class EyeContactDetector:
                 # Calculate gaze direction
                 left_gaze = self.calculate_gaze_direction(left_iris, left_eye)
                 right_gaze = self.calculate_gaze_direction(right_iris, right_eye)
-                gaze_offset = [0, 0.2, 0]
+                gaze_offset = [0, 0.31, 0]
                 gaze_direction = (left_gaze + right_gaze) / 2 + gaze_offset
 
-                if gaze_direction[0] < -0.4:
+                if gaze_direction[0] < -0.27:
                     gaze_text = "Left"
-                elif gaze_direction[0] > 0.4:
+                elif gaze_direction[0] > 0.27:
                     gaze_text = "Right"
-                elif gaze_direction[1] < -0.3:
+                elif gaze_direction[1] < -0.25:
                     gaze_text = "Up"
-                elif gaze_direction[1] > 0.3:
+                elif gaze_direction[1] > 0.25:
                     gaze_text = "Down"
                 else:
                     gaze_text = "Forward"
 
-                # Determine if eye contact is made
+                # Determine if eye contact is made with smoother transitions
                 self.eye_contact = (
                     not self.blinking and (
-                    (head_text == "Forward" and gaze_text == "Forward") or
-                    (head_text == "Up" and gaze_text == "Down") or
-                    (head_text == "Up" and gaze_text == "Forward") or
-                    (head_text == "Down" and gaze_text == "Up") or
-                    (head_text == "Left" and gaze_text == "Right") or
-                    (head_text == "Right" and gaze_text == "Left"))
+                        (head_text == "Forward" and gaze_text == "Forward") or
+                        (3 <= y <= 8 and -0.9 <= gaze_direction[0] <= -0.2) or  # Face slightly right, gaze slightly left
+                        (-8 <= y <= -3 and 0.2 <= gaze_direction[0] <= 0.9) or  # Face slightly left, gaze slightly right
+                        (-20 <= x <= -12 and -0.4 <= gaze_direction[1] <= -0.14) or  # Face slightly down, gaze slightly up
+                        (head_text == "Up" and gaze_text == "Down") or
+                        (head_text == "Up" and gaze_text == "Forward") or
+                        (head_text == "Down" and gaze_text == "Up") or
+                        (head_text == "Left" and gaze_text == "Right") or
+                        (head_text == "Right" and gaze_text == "Left"))
                 )
 
                 nose_tip = face_landmarks.landmark[4]
                 start_point = np.array([nose_tip.x * image.shape[1], nose_tip.y * image.shape[0]])
                 self.draw_gaze_arrow(image, start_point, gaze_direction)
+
+                # Add text overlay for gaze directions and head pose
+                cv2.putText(image, f'Gaze X: {gaze_direction[0]:.2f}', (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+                cv2.putText(image, f'Gaze Y: {gaze_direction[1]:.2f}', (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+                cv2.putText(image, f'Face X: {x:.2f}', (20, 150), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+                cv2.putText(image, f'Face Y: {y:.2f}', (20, 200), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+                cv2.putText(image, f'blink ?: {self.blinking}', (20, 250), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+                cv2.putText(image, f'head: {head_text}', (20, 300), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+                cv2.putText(image, f'gaze: {gaze_text}', (20, 350), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
 
         end = time.time()
         totalTime = end - start

@@ -75,7 +75,7 @@ The modular structure of the code makes it easy to add new features, such as add
 
 ## Contributing
 
-Contributions are welcome! If you find a bug or have a feature request, feel free to open an issue or submit a pull request.
+Contributions are welcome! If you find a bug or have a feature request, feel free to open an issue or to contact me.
 
 ## License
 
