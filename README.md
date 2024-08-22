@@ -1,4 +1,4 @@
-# Eye Contact Detection
+# Eye Contact Detection (OpenCV, Mediapipe)
 
 This project implements a real-time eye contact detection system using Python, OpenCV, and MediaPipe. The application detects the user's gaze direction and head pose, determining if eye contact is made. It also includes a graphical user interface (GUI) built with `tkinter`, which displays the eye contact status and provides controls for calibration and quitting the application.
 
