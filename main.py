@@ -44,10 +44,9 @@ drawing_spec = mp_drawing.DrawingSpec(thickness=1, circle_radius=1)
 cap = cv2.VideoCapture(0)
 
 # Variables to store the calibration angles, depending on your face geometry might need calibration
-calibrated_x = 0
+calibrated_x = 6
 calibrated_y = 0
 calibrated_z = 0
-calibrated = False
 
 # EAR threshold for blink detection
 EAR_THRESHOLD = 0.25
