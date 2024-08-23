@@ -57,6 +57,8 @@ class EyeContactDetector:
 
         start = time.time()
 
+        self.eye_contact = False
+
         image = cv2.cvtColor(cv2.flip(image, 1), cv2.COLOR_BGR2RGB)
         image.flags.writeable = False
         results = self.face_mesh.process(image)
@@ -71,6 +73,8 @@ class EyeContactDetector:
             for face_landmarks in results.multi_face_landmarks:
                 for idx, lm in enumerate(face_landmarks.landmark):
                     if idx == 33 or idx == 263 or idx == 1 or idx == 61 or idx == 291 or idx == 199:
+                        if idx == 1:
+                            nose_2d = (lm.x * img_w, lm.y * img_h)
                         x, y = int(lm.x * img_w), int(lm.y * img_h)
 
                         face_2d.append([x, y])
@@ -135,20 +139,22 @@ class EyeContactDetector:
                 mesh_alpha = 0.4  # Mesh transparency factor
                 image = cv2.addWeighted(mesh_overlay, mesh_alpha, image, 1 - mesh_alpha, 0)
 
+                p1 = (int(nose_2d[0]), int(nose_2d[1]))
+                p2 = (int(nose_2d[0] + y * 10), int(nose_2d[1] - x * 10))
+
+                cv2.line(image, p1, p2, (255, 0, 0), 3)
+
+
+
                 ########## Calculate gaze direction
 
-                left_iris = [face_landmarks.landmark[468]]
-                right_iris = [face_landmarks.landmark[473]]
+                ear_left_eye = [face_landmarks.landmark[i] for i in [33, 160, 158, 133, 153, 144]]
+                ear_right_eye = [face_landmarks.landmark[i] for i in [362, 385, 387, 263, 373, 380]]
 
-                left_eye = [face_landmarks.landmark[i] for i in [33, 173]]
-                right_eye = [face_landmarks.landmark[i] for i in [398, 263]]
-
-                complete_left_eye = [face_landmarks.landmark[i] for i in [33, 160, 158, 133, 153, 144]]
-                complete_right_eye = [face_landmarks.landmark[i] for i in [362, 385, 387, 263, 373, 380]]
 
                 # Calculate EAR for blink detection
-                left_ear = self.calculate_EAR(complete_left_eye)
-                right_ear = self.calculate_EAR(complete_right_eye)
+                left_ear = self.calculate_EAR(ear_left_eye)
+                right_ear = self.calculate_EAR(ear_right_eye)
                 avg_ear = (left_ear + right_ear) / 2
 
                 if (avg_ear < self.EAR_THRESHOLD) & (head_text != "Up"):
@@ -158,9 +164,23 @@ class EyeContactDetector:
                     self.blinking = False
 
                 # Calculate gaze direction
-                left_gaze = self.calculate_gaze_direction(left_iris, left_eye)
-                right_gaze = self.calculate_gaze_direction(right_iris, right_eye)
-                gaze_offset = [0, 0.31, 0]
+
+                left_iris = [face_landmarks.landmark[468]]
+                right_iris = [face_landmarks.landmark[473]]
+
+                left_eye = [face_landmarks.landmark[i] for i in [33, 173]]
+                right_eye = [face_landmarks.landmark[i] for i in [398, 263]]
+
+
+                c_left_iris = [face_landmarks.landmark[i] for i in range(468, 472)]
+                c_right_iris = [face_landmarks.landmark[i] for i in range(473, 477)]
+
+                c_left_eye = [face_landmarks.landmark[i] for i in [ 33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161 , 246 ]]
+                c_right_eye = [face_landmarks.landmark[i] for i in [ 362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385,384, 398 ]]
+
+                left_gaze = self.calculate_gaze_direction(c_left_iris, c_left_eye)
+                right_gaze = self.calculate_gaze_direction(c_right_iris, c_right_eye)
+                gaze_offset = [0, 0.6, 0]
                 gaze_direction = (left_gaze + right_gaze) / 2 + gaze_offset
 
                 if gaze_direction[0] < -0.27:
@@ -178,9 +198,9 @@ class EyeContactDetector:
                 self.eye_contact = (
                     not self.blinking and (
                         (head_text == "Forward" and gaze_text == "Forward") or
-                        (3 <= y <= 8 and -0.9 <= gaze_direction[0] <= -0.2) or  # Face slightly right, gaze slightly left
-                        (-8 <= y <= -3 and 0.2 <= gaze_direction[0] <= 0.9) or  # Face slightly left, gaze slightly right
-                        (-20 <= x <= -12 and -0.4 <= gaze_direction[1] <= -0.14) or  # Face slightly down, gaze slightly up
+                        #(3 <= y <= 8 and -0.9 <= gaze_direction[0] <= -0.2) or  # Face slightly right, gaze slightly left
+                        #(-8 <= y <= -3 and 0.2 <= gaze_direction[0] <= 0.9) or  # Face slightly left, gaze slightly right
+                        #(-20 <= x <= -12 and -0.4 <= gaze_direction[1] <= -0.14) or  # Face slightly down, gaze slightly up
                         (head_text == "Up" and gaze_text == "Down") or
                         (head_text == "Up" and gaze_text == "Forward") or
                         (head_text == "Down" and gaze_text == "Up") or
@@ -192,12 +212,12 @@ class EyeContactDetector:
                 start_point = np.array([nose_tip.x * image.shape[1], nose_tip.y * image.shape[0]])
                 self.draw_gaze_arrow(image, start_point, gaze_direction)
 
+
                 # Add text overlay for gaze directions and head pose
                 cv2.putText(image, f'Gaze X: {gaze_direction[0]:.2f}', (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
                 cv2.putText(image, f'Gaze Y: {gaze_direction[1]:.2f}', (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
                 cv2.putText(image, f'Face X: {x:.2f}', (20, 150), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
                 cv2.putText(image, f'Face Y: {y:.2f}', (20, 200), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
-                cv2.putText(image, f'blink ?: {self.blinking}', (20, 250), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
                 cv2.putText(image, f'head: {head_text}', (20, 300), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
                 cv2.putText(image, f'gaze: {gaze_text}', (20, 350), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
 
