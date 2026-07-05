@@ -1,0 +1,2 @@
+# Dev install: `pip install -e .`  (deps are declared in pyproject.toml)
+-e .
