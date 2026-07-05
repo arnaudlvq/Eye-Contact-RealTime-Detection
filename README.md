@@ -47,13 +47,26 @@ flowchart LR
 - **CALIBRATE** une fois (fixe la caméra) absorbe le décalage caméra ↔ cible — persisté par l'appelant.
 - Lissage (EMA), hystérésis et gel pendant les clignements rendent la décision stable.
 
-## Caméra MIPI / NPU
+## Backends — modulaire
 
-`DetectorConfig(use_gst_camera=True)` remplace la capture OpenCV par une capture
-**GStreamer** (ISP sunxi-vin des cartes Allwinner). Les modèles MediaPipe
-peuvent aussi tourner sur un **NPU VeriSilicon VIP9000** — voir
-[le portage NPU](https://github.com/arnaudlvq/MediaPipe-FaceLandmarker-NPU-Version-A733-VeriSilicon-VIP9000)
-(~7× moins d'énergie que le CPU, mesuré).
+L'inférence est **découplée** de la géométrie du regard. Par défaut : le
+FaceLandmarker **CPU** de MediaPipe (portable, marche partout). Pour l'accélérer,
+injecte un autre backend — la géométrie ne change pas d'une ligne :
+
+```python
+EyeContactDetector(settings, landmarker=mon_backend)
+# mon_backend : n'importe quel objet avec detect_for_video(mp.Image, ts) -> résultat
+```
+
+- 🖥️ **CPU** (défaut) — MediaPipe standard, universel, repli.
+- ⚡ **NPU VeriSilicon VIP9000** (Radxa / Allwinner) — **~7× moins d'énergie**
+  (mesuré). Tout le spécifique carte (compilation NBG, runtime VIPLite, runner)
+  vit dans son **propre repo** :
+  [MediaPipe-FaceLandmarker-NPU-…-VIP9000](https://github.com/arnaudlvq/MediaPipe-FaceLandmarker-NPU-Version-A733-VeriSilicon-VIP9000).
+  Ce repo‑ci reste **100 % portable** — aucune dépendance NPU.
+
+**Caméra MIPI :** `DetectorConfig(use_gst_camera=True)` → capture **GStreamer**
+(ISP sunxi-vin des cartes Allwinner) au lieu d'OpenCV.
 
 ## Licence
 

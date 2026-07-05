@@ -220,20 +220,30 @@ class EyeContactDetector:
         settings: GazeSettings,
         config: DetectorConfig | None = None,
         model_path: Path = DEFAULT_MODEL_PATH,
+        landmarker: object | None = None,
     ) -> None:
+        """`landmarker` is the pluggable inference backend. Leave it None to use
+        the default **CPU MediaPipe FaceLandmarker** (portable, works anywhere).
+        Inject any object exposing `detect_for_video(mp.Image, timestamp_ms) ->
+        FaceLandmarkerResult` to swap the backend — e.g. the VeriSilicon VIP9000
+        **NPU** backend from the MediaPipe-FaceLandmarker-NPU repo (Radxa boards).
+        The gaze geometry below is backend-agnostic; nothing here is NPU-specific."""
         self.settings = settings
         self.config = config or DetectorConfig()
 
-        options = vision.FaceLandmarkerOptions(
-            base_options=mp_tasks.BaseOptions(model_asset_path=str(model_path)),
-            running_mode=vision.RunningMode.VIDEO,
-            num_faces=1,
-            output_face_blendshapes=True,
-            output_facial_transformation_matrixes=True,
-            min_face_detection_confidence=0.5,
-            min_tracking_confidence=0.5,
-        )
-        self.landmarker = vision.FaceLandmarker.create_from_options(options)
+        if landmarker is not None:
+            self.landmarker = landmarker
+        else:
+            options = vision.FaceLandmarkerOptions(
+                base_options=mp_tasks.BaseOptions(model_asset_path=str(model_path)),
+                running_mode=vision.RunningMode.VIDEO,
+                num_faces=1,
+                output_face_blendshapes=True,
+                output_facial_transformation_matrixes=True,
+                min_face_detection_confidence=0.5,
+                min_tracking_confidence=0.5,
+            )
+            self.landmarker = vision.FaceLandmarker.create_from_options(options)
 
         if self.config.use_gst_camera:
             sw, sh = self.config.gst_sensor_size
