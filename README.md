@@ -2,7 +2,7 @@
 
 *« Est-ce qu'on me regarde ? », en temps réel, depuis n'importe quelle webcam. Géométrique, sans entraînement, sans GPU.*
 
-![license](https://img.shields.io/badge/license-Apache--2.0-blue)
+![license](https://img.shields.io/badge/license-MIT-blue)
 ![method](https://img.shields.io/badge/method-geometric_gaze-1d9e75)
 ![deps](https://img.shields.io/badge/on-MediaPipe_FaceLandmarker-444)
 
@@ -67,4 +67,4 @@ lieu d'OpenCV.
 
 ## Licence
 
-Apache-2.0. Construit sur le MediaPipe FaceLandmarker de Google.
+MIT. Construit sur le MediaPipe FaceLandmarker de Google (modèles sous Apache-2.0).
