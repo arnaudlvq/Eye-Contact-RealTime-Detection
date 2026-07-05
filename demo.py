@@ -12,7 +12,7 @@ from eye_contact_detector import DetectorConfig, EyeContactDetector
 settings = SimpleNamespace(window_h_deg=12.0, window_v_deg=10.0)
 det = EyeContactDetector(settings, config=DetectorConfig(camera_index=0))
 
-print("Regarde la caméra…  (Ctrl-C pour quitter)")
+print("Look at the camera…  (Ctrl-C to quit)")
 try:
     while True:
         _frame, contact = det.detect_eye_contact()
