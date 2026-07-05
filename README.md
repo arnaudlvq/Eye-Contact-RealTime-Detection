@@ -1,6 +1,6 @@
 # Eye-Contact Real-Time Detection
 
-*« Est-ce qu'on me regarde ? » — en temps réel, depuis n'importe quelle webcam. Géométrique, sans entraînement, sans GPU.*
+*« Est-ce qu'on me regarde ? », en temps réel, depuis n'importe quelle webcam. Géométrique, sans entraînement, sans GPU.*
 
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![method](https://img.shields.io/badge/method-geometric_gaze-1d9e75)
@@ -33,7 +33,7 @@ visage, la pose de la tête, et 52 *blendshapes*. À partir des blendshapes
 `eyeLook*` et de la rotation de tête, on reconstruit la **direction du regard en
 3D**, on la compare à la direction de la caméra, et c'est « contact » quand
 l'erreur angulaire tient dans une fenêtre (en degrés). Pas de dataset, pas
-d'entraînement, pas de CNN de regard — juste de la géométrie.
+d'entraînement, pas de CNN de regard, juste de la géométrie.
 
 ```mermaid
 flowchart LR
@@ -44,14 +44,14 @@ flowchart LR
   cmp -->|non| no["· · · pas de contact"]
 ```
 
-- **CALIBRATE** une fois (fixe la caméra) absorbe le décalage caméra ↔ cible — persisté par l'appelant.
+- **CALIBRATE** une fois (fixe la caméra) absorbe le décalage caméra ↔ cible, persisté par l'appelant.
 - Lissage (EMA), hystérésis et gel pendant les clignements rendent la décision stable.
 
-## Backends — modulaire
+## Backends, modulaire
 
 L'inférence est **découplée** de la géométrie du regard. Par défaut : le
 FaceLandmarker **CPU** de MediaPipe (portable, marche partout). Pour changer de
-moteur, injecte ton propre backend — la géométrie ne bouge pas d'une ligne :
+moteur, injecte ton propre backend, la géométrie ne bouge pas d'une ligne :
 
 ```python
 EyeContactDetector(settings, landmarker=mon_backend)

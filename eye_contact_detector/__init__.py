@@ -176,7 +176,7 @@ class DetectorConfig:
     frame_height: int = 480
 
     # MIPI/CSI camera via GStreamer. When use_gst_camera is True, the OpenCV
-    # capture is replaced by a gst-launch subprocess — for sensors whose ISP path
+    # capture is replaced by a gst-launch subprocess, for sensors whose ISP path
     # a plain v4l2src can't drive (some need a vendor v4l2src, e.g. en-awisp).
     use_gst_camera: bool = False
     gst_device: str = "/dev/video0"
@@ -226,7 +226,7 @@ class EyeContactDetector:
         Inject any object exposing `detect_for_video(mp.Image, timestamp_ms) ->
         FaceLandmarkerResult` to swap in an accelerated backend (custom hardware,
         a delegate, a remote service…). The gaze geometry below is
-        backend-agnostic — it never assumes what runs the model."""
+        backend-agnostic, it never assumes what runs the model."""
         self.settings = settings
         self.config = config or DetectorConfig()
 

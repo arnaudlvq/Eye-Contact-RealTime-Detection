@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal demo — prints whether someone is looking at the camera, live.
+"""Minimal demo, prints whether someone is looking at the camera, live.
 
     pip install git+https://github.com/arnaudlvq/Eye-Contact-RealTime-Detection
     python demo.py
