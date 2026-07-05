@@ -50,23 +50,20 @@ flowchart LR
 ## Backends — modulaire
 
 L'inférence est **découplée** de la géométrie du regard. Par défaut : le
-FaceLandmarker **CPU** de MediaPipe (portable, marche partout). Pour l'accélérer,
-injecte un autre backend — la géométrie ne change pas d'une ligne :
+FaceLandmarker **CPU** de MediaPipe (portable, marche partout). Pour changer de
+moteur, injecte ton propre backend — la géométrie ne bouge pas d'une ligne :
 
 ```python
 EyeContactDetector(settings, landmarker=mon_backend)
 # mon_backend : n'importe quel objet avec detect_for_video(mp.Image, ts) -> résultat
 ```
 
-- 🖥️ **CPU** (défaut) — MediaPipe standard, universel, repli.
-- ⚡ **NPU VeriSilicon VIP9000** (Radxa / Allwinner) — **~7× moins d'énergie**
-  (mesuré). Tout le spécifique carte (compilation NBG, runtime VIPLite, runner)
-  vit dans son **propre repo** :
-  [MediaPipe-FaceLandmarker-NPU-…-VIP9000](https://github.com/arnaudlvq/MediaPipe-FaceLandmarker-NPU-Version-A733-VeriSilicon-VIP9000).
-  Ce repo‑ci reste **100 % portable** — aucune dépendance NPU.
+Ça permet de brancher un backend accéléré (matériel dédié, delegate, service…)
+sans toucher au cœur, qui reste **100 % portable**.
 
-**Caméra MIPI :** `DetectorConfig(use_gst_camera=True)` → capture **GStreamer**
-(ISP sunxi-vin des cartes Allwinner) au lieu d'OpenCV.
+**Caméra MIPI/CSI :** `DetectorConfig(use_gst_camera=True)` → capture
+**GStreamer** (utile pour les caméras MIPI qu'OpenCV ne sait pas piloter) au
+lieu d'OpenCV.
 
 ## Licence
 

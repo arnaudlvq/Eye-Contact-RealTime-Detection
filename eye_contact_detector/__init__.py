@@ -51,12 +51,11 @@ HYSTERESIS_FACTOR = 1.2  # window grows by this much while contact is held
 
 class GstCapture:
     """A cv2.VideoCapture drop-in that reads frames from a GStreamer subprocess.
-    Needed for the Allwinner A733 MIPI camera (sunxi-vin): OpenCV's V4L2 backend
-    cannot drive its multiplanar/ISP path, but Allwinner's patched v4l2src (the
-    en-awisp property) runs the ISP pipeline. We take raw NV12 off an fdsink and
-    convert in Python (cheaper than a gst videoconvert), which also makes
-    grayscale free - the NV12 luma plane IS the grayscale image. Grayscale is the
-    default: it drops the A733 ISP's imperfect chroma (colour-layer artifacts)
+    Useful for MIPI/CSI cameras that OpenCV's V4L2 backend can't drive (multiplanar
+    or ISP-only pipelines) but a GStreamer `v4l2src` can. We take raw NV12 off an
+    fdsink and convert in Python (cheaper than a gst videoconvert), which also
+    makes grayscale free - the NV12 luma plane IS the grayscale image. Grayscale
+    is the default: it drops the ISP's imperfect chroma (colour-layer artifacts)
     with < 1 px effect on the landmarks, and is slightly faster. The pipeline
     auto-restarts if it stalls or ends.
     """
@@ -176,9 +175,9 @@ class DetectorConfig:
     frame_width: int = 640  # modest resolution keeps single-board computers happy
     frame_height: int = 480
 
-    # MIPI camera via GStreamer (Allwinner A733 sunxi-vin). When use_gst_camera
-    # is True, the OpenCV capture is replaced by a gst-launch subprocess (the
-    # ISP path can only be driven by Allwinner's patched v4l2src en-awisp).
+    # MIPI/CSI camera via GStreamer. When use_gst_camera is True, the OpenCV
+    # capture is replaced by a gst-launch subprocess — for sensors whose ISP path
+    # a plain v4l2src can't drive (some need a vendor v4l2src, e.g. en-awisp).
     use_gst_camera: bool = False
     gst_device: str = "/dev/video0"
     gst_sensor_size: tuple[int, int] = (1920, 1080)
@@ -225,9 +224,9 @@ class EyeContactDetector:
         """`landmarker` is the pluggable inference backend. Leave it None to use
         the default **CPU MediaPipe FaceLandmarker** (portable, works anywhere).
         Inject any object exposing `detect_for_video(mp.Image, timestamp_ms) ->
-        FaceLandmarkerResult` to swap the backend — e.g. the VeriSilicon VIP9000
-        **NPU** backend from the MediaPipe-FaceLandmarker-NPU repo (Radxa boards).
-        The gaze geometry below is backend-agnostic; nothing here is NPU-specific."""
+        FaceLandmarkerResult` to swap in an accelerated backend (custom hardware,
+        a delegate, a remote service…). The gaze geometry below is
+        backend-agnostic — it never assumes what runs the model."""
         self.settings = settings
         self.config = config or DetectorConfig()
 
