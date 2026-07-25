@@ -89,6 +89,7 @@ class GstCapture:
         self.frame_bytes = out_w * out_h * 3 // 2  # NV12: W*H luma + W*H/2 chroma
         self.proc: subprocess.Popen | None = None
         self._fr = None
+        self._buf = b""
         self._spawn()
 
     def _spawn(self) -> None:
@@ -119,23 +120,44 @@ class GstCapture:
     READ_TIMEOUT_S = 2.0  # a live pipeline delivers every frame interval
 
     def read(self):
+        """Return the NEWEST complete frame, not the oldest queued one.
+
+        The pipeline produces at the sensor rate while the caller may read
+        much slower: without draining, frames pile up in the gst/pipe
+        buffers and every read returns an ever-staler image (a reader at
+        5 fps on a 15 fps stream settles around a second of lag). So block
+        for the first complete frame, then drain whatever else has already
+        arrived and keep only the latest.
+        """
         if self._fr is None:
             return False, None
-        buf = b""
+        fd = self._fr.fileno()
         try:
-            while len(buf) < self.frame_bytes:
-                # The gst process can stay alive while the sensor stops
-                # delivering (cable wiggle, ISP hiccup): a plain read() then
-                # blocks forever and freezes the caller. select() bounds it.
-                ready, _, _ = select.select([self._fr], [], [], self.READ_TIMEOUT_S)
+            # Block (bounded) until at least one complete frame is buffered.
+            # select() keeps a dead-but-alive gst process (cable wiggle, ISP
+            # hiccup) from freezing the caller forever.
+            while len(self._buf) < self.frame_bytes:
+                ready, _, _ = select.select([fd], [], [], self.READ_TIMEOUT_S)
                 if not ready:
                     self._restart()
                     return False, None
-                chunk = self._fr.read(self.frame_bytes - len(buf))
+                chunk = os.read(fd, 1 << 20)
                 if not chunk:
                     self._restart()
                     return False, None
-                buf += chunk
+                self._buf += chunk
+            # Drain everything already available without blocking.
+            while True:
+                ready, _, _ = select.select([fd], [], [], 0)
+                if not ready:
+                    break
+                chunk = os.read(fd, 1 << 20)
+                if not chunk:
+                    break
+                self._buf += chunk
+            n = len(self._buf) // self.frame_bytes
+            buf = self._buf[(n - 1) * self.frame_bytes : n * self.frame_bytes]
+            self._buf = self._buf[n * self.frame_bytes :]
         except OSError:
             self._restart()
             return False, None
@@ -150,6 +172,7 @@ class GstCapture:
 
     def _restart(self) -> None:
         logger.warning("GStreamer camera stalled; restarting pipeline")
+        self._buf = b""
         self.release()
         try:
             self._spawn()
