@@ -170,6 +170,14 @@ class GstCapture:
             frame = cv2.rotate(frame, self._ROT[self.rotate])
         return True, frame
 
+    def open(self) -> None:
+        """(Re)start the pipeline after release(). Lets a caller power the
+        sensor down for a while and bring it back without rebuilding
+        anything else; no-op when already running."""
+        if self.proc is None:
+            self._buf = b""
+            self._spawn()
+
     def set_framerate(self, framerate: int) -> None:
         """Respawn the pipeline at a new sensor rate.
 
