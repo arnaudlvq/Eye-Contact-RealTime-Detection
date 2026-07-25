@@ -170,6 +170,21 @@ class GstCapture:
             frame = cv2.rotate(frame, self._ROT[self.rotate])
         return True, frame
 
+    def set_framerate(self, framerate: int) -> None:
+        """Respawn the pipeline at a new sensor rate.
+
+        Producing frames the caller will not read costs ISP bandwidth and a
+        memcpy each; matching the sensor to the consumer removes that work
+        entirely. Cheap enough to call on every settings change.
+        """
+        if framerate == self.framerate:
+            return
+        logger.info("Camera framerate %d -> %d fps", self.framerate, framerate)
+        self.framerate = framerate
+        self._buf = b""
+        self.release()
+        self._spawn()
+
     def _restart(self) -> None:
         logger.warning("GStreamer camera stalled; restarting pipeline")
         self._buf = b""
