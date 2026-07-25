@@ -90,26 +90,44 @@ class GstCapture:
         self.proc: subprocess.Popen | None = None
         self._fr = None
         self._buf = b""
+        self._last_spawn_at = 0.0
         self._spawn()
 
     def _spawn(self) -> None:
-        read_fd, write_fd = os.pipe()
-        cmd = [
-            "gst-launch-1.0", "v4l2src", f"device={self.device}",
-            "en-awisp=1", f"en-largemode={self.largemode}",
-            "!",
-            f"video/x-raw,format=NV12,width={self.sensor_w},"
-            f"height={self.sensor_h},framerate={self.framerate}/1",
-            "!", "videoscale",
-            "!", f"video/x-raw,format=NV12,width={self.out_w},height={self.out_h}",
-            "!", "fdsink", f"fd={write_fd}",
-        ]
-        # ISP chatter goes to gst's stdout/stderr (discarded); frames go to the pipe
-        self.proc = subprocess.Popen(
-            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, pass_fds=(write_fd,)
-        )
-        os.close(write_fd)
-        self._fr = os.fdopen(read_fd, "rb", buffering=0)
+        """Start the pipeline. Never raises and never leaks a descriptor: a
+        camera that cannot start must not take its caller down, it reports no
+        frames until read() retries the spawn on its backoff."""
+        self._last_spawn_at = time.monotonic()
+        read_fd = write_fd = None
+        try:
+            read_fd, write_fd = os.pipe()
+            cmd = [
+                "gst-launch-1.0", "v4l2src", f"device={self.device}",
+                "en-awisp=1", f"en-largemode={self.largemode}",
+                "!",
+                f"video/x-raw,format=NV12,width={self.sensor_w},"
+                f"height={self.sensor_h},framerate={self.framerate}/1",
+                "!", "videoscale",
+                "!", f"video/x-raw,format=NV12,width={self.out_w},height={self.out_h}",
+                "!", "fdsink", f"fd={write_fd}",
+            ]
+            # ISP chatter goes to gst's stdout/stderr (discarded); frames to the pipe
+            self.proc = subprocess.Popen(
+                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                pass_fds=(write_fd,),
+            )
+            os.close(write_fd)
+            write_fd = None
+            self._fr = os.fdopen(read_fd, "rb", buffering=0)
+            read_fd = None
+        except OSError:
+            logger.exception("GStreamer camera could not be started")
+            self.proc, self._fr = None, None
+        finally:
+            for fd in (read_fd, write_fd):
+                if fd is not None:
+                    with contextlib.suppress(OSError):
+                        os.close(fd)
 
     def isOpened(self) -> bool:  # cv2 API name
         return self.proc is not None and self.proc.poll() is None
@@ -118,6 +136,7 @@ class GstCapture:
         return True
 
     READ_TIMEOUT_S = 2.0  # a live pipeline delivers every frame interval
+    RESPAWN_BACKOFF_S = 5.0  # do not hammer a camera that refuses to start
 
     def read(self):
         """Return the NEWEST complete frame, not the oldest queued one.
@@ -130,6 +149,11 @@ class GstCapture:
         arrived and keep only the latest.
         """
         if self._fr is None:
+            # A previous spawn failed. Keep trying, spaced out, so a camera
+            # that comes back (replugged, driver recovered) is picked up
+            # instead of staying dead for the life of the process.
+            if time.monotonic() - self._last_spawn_at > self.RESPAWN_BACKOFF_S:
+                self._spawn()
             return False, None
         fd = self._fr.fileno()
         try:
@@ -328,6 +352,7 @@ class EyeContactDetector:
         self._calib_rotation = np.eye(3)  # absorbs camera->clock offset + bias
         self._last_timestamp_ms = 0
         self._camera_failures = 0
+        self.camera_ok = True  # False once reads fail: a blank frame is not a dark room
 
     def __enter__(self) -> EyeContactDetector:
         return self
@@ -388,16 +413,19 @@ class EyeContactDetector:
         success, frame = self.cap.read()
         if not success or frame is None:
             # A dead camera must not hold the last gaze state: the clock
-            # would stay frozen on a stale eye contact until repair.
+            # would stay frozen on a stale eye contact until repair. It must
+            # also be distinguishable from a dark room, hence camera_ok:
+            # the blank frame below reads as pitch black to any light meter.
             self._camera_failures += 1
+            self.camera_ok = False
             if self._camera_failures >= 3:
                 self.eye_contact = False
                 self.smoothed_yaw_err = None
                 self.smoothed_pitch_err = None
-            return np.zeros((self.config.frame_height, self.config.frame_width, 3), np.uint8), (
-                self.eye_contact
-            )
+            height, width = self._blank_size()
+            return np.zeros((height, width, 3), np.uint8), self.eye_contact
         self._camera_failures = 0
+        self.camera_ok = True
 
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
@@ -524,6 +552,17 @@ class EyeContactDetector:
     def reset_calibration(self) -> None:
         self._calib_rotation = np.eye(3)
 
+    def _blank_size(self) -> tuple[int, int]:
+        """Size of the placeholder frame: the camera's own, so a failure does
+        not resize the caller's view."""
+        if self.config.use_gst_camera:
+            return self.config.gst_output_size[1], self.config.gst_output_size[0]
+        return self.config.frame_height, self.config.frame_width
+
     def release(self) -> None:
-        self.cap.release()
-        self.landmarker.close()
+        # The model must be closed even if the camera misbehaves on the way
+        # out, otherwise every standby cycle leaks a native context.
+        try:
+            self.cap.release()
+        finally:
+            self.landmarker.close()
