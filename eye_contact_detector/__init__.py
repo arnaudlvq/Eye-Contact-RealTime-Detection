@@ -30,6 +30,7 @@ import contextlib
 import logging
 import math
 import os
+import select
 import subprocess
 import time
 from dataclasses import dataclass
@@ -115,12 +116,21 @@ class GstCapture:
     def set(self, *args) -> bool:  # cv2 API no-op
         return True
 
+    READ_TIMEOUT_S = 2.0  # a live pipeline delivers every frame interval
+
     def read(self):
         if self._fr is None:
             return False, None
         buf = b""
         try:
             while len(buf) < self.frame_bytes:
+                # The gst process can stay alive while the sensor stops
+                # delivering (cable wiggle, ISP hiccup): a plain read() then
+                # blocks forever and freezes the caller. select() bounds it.
+                ready, _, _ = select.select([self._fr], [], [], self.READ_TIMEOUT_S)
+                if not ready:
+                    self._restart()
+                    return False, None
                 chunk = self._fr.read(self.frame_bytes - len(buf))
                 if not chunk:
                     self._restart()
@@ -184,6 +194,7 @@ class DetectorConfig:
     gst_output_size: tuple[int, int] = (960, 540)
     gst_rotate: int = 0  # 0/90/180/270 clockwise, for a sideways-mounted sensor
     gst_grayscale: bool = True  # luma-only: drops the ISP colour artifacts, faster
+    gst_framerate: int = 30  # sensor rate; lower it to shed ISP + copy work
 
     # Physiological constants: human eyes rotate roughly this far when a
     # blendshape saturates at 1.0 (same for everyone, not tuning knobs)
@@ -250,6 +261,7 @@ class EyeContactDetector:
             self.cap = GstCapture(
                 self.config.gst_device, sw, sh, ow, oh,
                 rotate=self.config.gst_rotate, grayscale=self.config.gst_grayscale,
+                framerate=self.config.gst_framerate,
             )
             logger.info("Camera via GStreamer (%s -> %dx%d BGR)", self.config.gst_device, ow, oh)
         else:
@@ -269,6 +281,7 @@ class EyeContactDetector:
         self._needs_calibration = False
         self._calib_rotation = np.eye(3)  # absorbs camera->clock offset + bias
         self._last_timestamp_ms = 0
+        self._camera_failures = 0
 
     def __enter__(self) -> EyeContactDetector:
         return self
@@ -328,9 +341,17 @@ class EyeContactDetector:
         """Grab one camera frame; return (annotated mirrored frame, eye contact)."""
         success, frame = self.cap.read()
         if not success or frame is None:
+            # A dead camera must not hold the last gaze state: the clock
+            # would stay frozen on a stale eye contact until repair.
+            self._camera_failures += 1
+            if self._camera_failures >= 3:
+                self.eye_contact = False
+                self.smoothed_yaw_err = None
+                self.smoothed_pitch_err = None
             return np.zeros((self.config.frame_height, self.config.frame_width, 3), np.uint8), (
                 self.eye_contact
             )
+        self._camera_failures = 0
 
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
