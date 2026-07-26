@@ -353,6 +353,10 @@ class EyeContactDetector:
         self._last_timestamp_ms = 0
         self._camera_failures = 0
         self.camera_ok = True  # False once reads fail: a blank frame is not a dark room
+        # Set False to get the raw frame back instead of the mirrored,
+        # annotated one: the gaze decision does not need either.
+        self.annotate = True
+        self.cap_is_gray = bool(self.config.use_gst_camera and self.config.gst_grayscale)
 
     def __enter__(self) -> EyeContactDetector:
         return self
@@ -427,7 +431,10 @@ class EyeContactDetector:
         self._camera_failures = 0
         self.camera_ok = True
 
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # A grayscale source has the same value in all three channels, so
+        # swapping them is a full-frame copy that changes nothing. At 1080p
+        # that copy is 6 MB per frame.
+        rgb = frame if self.cap_is_gray else cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
 
         # detect_for_video requires strictly increasing timestamps
@@ -442,6 +449,11 @@ class EyeContactDetector:
 
         # Mirror for a selfie-style display, then draw the gaze arrow (so it
         # matches what the user sees).
+        if not self.annotate:
+            return frame, self.eye_contact
+        # Mirror for a selfie-style view, then draw the gaze arrow, so the
+        # preview matches what the person sees. Both are full-frame work, so
+        # they are skipped unless someone is actually watching the preview.
         display = cv2.flip(frame, 1)
         self._draw_arrow(display, reading)
         return display, self.eye_contact
