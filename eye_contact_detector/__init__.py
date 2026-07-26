@@ -89,7 +89,7 @@ class GstCapture:
         self.frame_bytes = out_w * out_h * 3 // 2  # NV12: W*H luma + W*H/2 chroma
         self.proc: subprocess.Popen | None = None
         self._fr = None
-        self._buf = b""
+        self._buf = bytearray()
         self._last_spawn_at = 0.0
         self._spawn()
 
@@ -147,6 +147,10 @@ class GstCapture:
         5 fps on a 15 fps stream settles around a second of lag). So block
         for the first complete frame, then drain whatever else has already
         arrived and keep only the latest.
+
+        The accumulator is a bytearray: `bytes += chunk` copies the whole
+        buffer every time, and draining three 1.4 MB frames per read makes
+        that cost real.
         """
         if self._fr is None:
             # A previous spawn failed. Keep trying, spaced out, so a camera
@@ -169,7 +173,7 @@ class GstCapture:
                 if not chunk:
                     self._restart()
                     return False, None
-                self._buf += chunk
+                self._buf.extend(chunk)
             # Drain everything already available without blocking.
             while True:
                 ready, _, _ = select.select([fd], [], [], 0)
@@ -178,10 +182,10 @@ class GstCapture:
                 chunk = os.read(fd, 1 << 20)
                 if not chunk:
                     break
-                self._buf += chunk
+                self._buf.extend(chunk)
             n = len(self._buf) // self.frame_bytes
-            buf = self._buf[(n - 1) * self.frame_bytes : n * self.frame_bytes]
-            self._buf = self._buf[n * self.frame_bytes :]
+            buf = bytes(self._buf[(n - 1) * self.frame_bytes : n * self.frame_bytes])
+            del self._buf[: n * self.frame_bytes]
         except OSError:
             self._restart()
             return False, None
@@ -199,7 +203,7 @@ class GstCapture:
         sensor down for a while and bring it back without rebuilding
         anything else; no-op when already running."""
         if self.proc is None:
-            self._buf = b""
+            self._buf = bytearray()
             self._spawn()
 
     def set_framerate(self, framerate: int) -> None:
@@ -213,13 +217,13 @@ class GstCapture:
             return
         logger.info("Camera framerate %d -> %d fps", self.framerate, framerate)
         self.framerate = framerate
-        self._buf = b""
+        self._buf = bytearray()
         self.release()
         self._spawn()
 
     def _restart(self) -> None:
         logger.warning("GStreamer camera stalled; restarting pipeline")
-        self._buf = b""
+        self._buf = bytearray()
         self.release()
         try:
             self._spawn()
